@@ -1,36 +1,21 @@
-import React, {
-  ComponentType,
-  createContext,
-  ReactNode,
-  Ref,
-  useContext,
-  useState
-} from 'react'
+import React, { ComponentType, ReactNode, useContext, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Transition, TransitionGroup } from 'react-transition-group'
 import NotificationController from './NotificationController'
-import Notification, { Options } from './types/Notification'
+import Notification, { DefaultContentType, Options } from './types/Notification'
 import NotificationComponentProps from './types/NotificationComponent'
 import TransitionState from './types/TransitionState'
 
 type Id = string
-type AddFn = (content?: Node | string, options?: Options) => Id | null
+type AddFn<ContentType> = (content: ContentType, options?: Options) => Id | null
 type RemoveFn = (id: Id) => void
 
-interface Context {
-  add: AddFn
+interface Context<ContentType> {
+  add: AddFn<ContentType>
   remove: RemoveFn
   removeAll: () => void
-  notifications: Array<Notification>
+  notifications: Array<Notification<ContentType>>
 }
-
-const NotificationContext = createContext<Context>({
-  add: () => '',
-  remove: () => null,
-  removeAll: () => null,
-  notifications: []
-})
-const { Consumer, Provider } = NotificationContext
 
 const canUseDOM = !!(
   typeof window !== 'undefined' &&
@@ -44,137 +29,131 @@ function generateUEID(): string {
   return first + second
 }
 
-interface NotificationProviderProps {
+interface NotificationProviderProps<ContentType> {
   autoDismissTimeout?: number
   autoDismiss?: boolean
   children?: ReactNode
   transitionDuration?: number
   containerComponent: ComponentType
-  notificationComponent: ComponentType<NotificationComponentProps>
+  notificationComponent: ComponentType<NotificationComponentProps<ContentType>>
 }
 
-export const NotificationProvider = ({
-  autoDismissTimeout = 5000,
-  autoDismiss = true,
-  children,
-  containerComponent: ContainerComponent,
-  notificationComponent: NotificationComponent,
-  transitionDuration = 200
-}: NotificationProviderProps) => {
-  const [notifications, setNotifications] = useState<Array<Notification>>([])
-
-  const has = (id: Id): boolean => {
-    if (!notifications.length) return false
-    return Boolean(notifications.filter((t) => t.id === id).length)
-  }
-
-  const add = (
-    content: Node | string = '',
-    options: Options = {}
-  ): Id | null => {
-    const id = options.id || generateUEID()
-
-    // bail if a notification exists with this ID
-    if (has(id)) return null
-
-    // update the notification stack
-    setNotifications([...notifications, { content, id, ...options }])
-
-    // consumer may want to do something with the generated ID (and not use the callback)
-    return id
-  }
-
-  const remove = (id: Id): void => {
-    // bail if NO notifications exists with this ID
-    if (!has(id)) return
-
-    setNotifications(notifications.filter((t) => t.id !== id))
-  }
-
-  const removeAll = (): void => {
-    if (!notifications.length) return
-    notifications.forEach((t) => remove(t.id))
-  }
-
-  const onDismiss = (id: Id) => (): void => {
-    console.log('removing: ', id)
-    remove(id)
-  }
-
-  const portalTarget = canUseDOM ? document.body : null
-
-  return (
-    <Provider value={{ add, remove, removeAll, notifications }}>
-      {children}
-
-      {portalTarget ? (
-        createPortal(
-          <ContainerComponent>
-            <TransitionGroup component={null}>
-              {notifications.map(({ content, id, type }) => (
-                <Transition
-                  appear
-                  key={id}
-                  mountOnEnter
-                  timeout={transitionDuration}
-                  unmountOnExit
-                >
-                  {(transitionState: TransitionState) => (
-                    <NotificationController
-                      autoDismiss={autoDismiss}
-                      autoDismissTimeout={autoDismissTimeout}
-                      key={id}
-                      onDismiss={onDismiss(id)}
-                      transitionDuration={transitionDuration}
-                      transitionState={transitionState}
-                      component={NotificationComponent}
-                      type={type}
-                    >
-                      {content}
-                    </NotificationController>
-                  )}
-                </Transition>
-              ))}
-            </TransitionGroup>
-          </ContainerComponent>,
-          portalTarget
-        )
-      ) : (
-        <ContainerComponent /> // keep ReactDOM.hydrate happy
-      )}
-    </Provider>
-  )
+interface NotificationConsumerProps<ContentType> {
+  children: (context: Context<ContentType>) => ReactNode
 }
 
-interface NotificationConsumerProps {
-  children: (context: Context) => ReactNode
-}
-export const NotificationConsumer = ({
-  children
-}: NotificationConsumerProps) => (
-  <Consumer>{(context) => children(context)}</Consumer>
-)
-
-export const withNotificationsManager = (Comp: ComponentType<never>) =>
-  React.forwardRef((props: never, ref: Ref<never>) => (
-    <NotificationConsumer>
-      {(context) => <Comp notificationManager={context} {...props} ref={ref} />}
-    </NotificationConsumer>
-  ))
-
-export const useNotifications = () => {
-  const ctx = useContext(NotificationContext)
-
-  if (!ctx) {
-    throw Error(
-      'The `useNotifications` hook must be called from a descendent of the `NotificationProvider`.'
-    )
-  }
+export function createContext<ContentType = DefaultContentType>() {
+  const ctx = React.createContext<Context<ContentType>>({
+    add: () => '',
+    remove: () => null,
+    removeAll: () => null,
+    notifications: []
+  })
 
   return {
-    addNotification: ctx.add,
-    removeNotification: ctx.remove,
-    removeAllNotifications: ctx.removeAll,
-    notificationStack: ctx.notifications
+    Provider: function ({
+      autoDismissTimeout = 5000,
+      autoDismiss = true,
+      children,
+      containerComponent: ContainerComponent,
+      notificationComponent: NotificationComponent,
+      transitionDuration = 200
+    }: NotificationProviderProps<ContentType>) {
+      const [notifications, setNotifications] = useState<
+        Array<Notification<ContentType>>
+      >([])
+
+      const has = (id: Id): boolean => {
+        if (!notifications.length) return false
+        return Boolean(notifications.filter((t) => t.id === id).length)
+      }
+
+      const add = (content: ContentType, options: Options = {}): Id | null => {
+        const id = options.id || generateUEID()
+
+        // bail if a notification exists with this ID
+        if (has(id)) return null
+
+        // update the notification stack
+        setNotifications([...notifications, { content, id, ...options }])
+
+        // consumer may want to do something with the generated ID (and not use the callback)
+        return id
+      }
+
+      const remove = (id: Id): void => {
+        setNotifications(notifications.filter((t) => t.id !== id))
+      }
+
+      const removeAll = (): void => {
+        if (!notifications.length) return
+        notifications.forEach((t) => remove(t.id))
+      }
+
+      const onDismiss = (id: Id) => (): void => {
+        remove(id)
+      }
+
+      const portalTarget = canUseDOM ? document.body : null
+
+      return (
+        <ctx.Provider value={{ add, remove, removeAll, notifications }}>
+          {children}
+
+          {portalTarget ? (
+            createPortal(
+              <ContainerComponent>
+                <TransitionGroup component={null}>
+                  {notifications.map(({ content, id }) => (
+                    <Transition
+                      appear
+                      key={id}
+                      mountOnEnter
+                      timeout={transitionDuration}
+                      unmountOnExit
+                    >
+                      {(transitionState: TransitionState) => (
+                        <NotificationController<ContentType>
+                          autoDismiss={autoDismiss}
+                          autoDismissTimeout={autoDismissTimeout}
+                          key={id}
+                          onDismiss={onDismiss(id)}
+                          transitionDuration={transitionDuration}
+                          transitionState={transitionState}
+                          component={NotificationComponent}
+                          content={content}
+                        />
+                      )}
+                    </Transition>
+                  ))}
+                </TransitionGroup>
+              </ContainerComponent>,
+              portalTarget
+            )
+          ) : (
+            <ContainerComponent /> // keep ReactDOM.hydrate happy
+          )}
+        </ctx.Provider>
+      )
+    },
+    Consumer: ({ children }: NotificationConsumerProps<ContentType>) => (
+      <ctx.Consumer>{(context) => children(context)}</ctx.Consumer>
+    ),
+    useNotifications: () => {
+      const context = useContext(ctx)
+
+      if (!context) {
+        throw Error(
+          'The `useNotifications` hook must be called from a descendent of the `NotificationProvider`.'
+        )
+      }
+
+      return {
+        addNotification: context.add,
+        removeNotification: context.remove,
+        removeAllNotifications: context.removeAll,
+        notificationStack: context.notifications
+      }
+    }
   }
 }

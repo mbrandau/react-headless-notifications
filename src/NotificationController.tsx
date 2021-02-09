@@ -1,34 +1,34 @@
-import React, { ComponentType, ReactNode } from 'react'
-import NotificationType from './types/NotificationType'
+import React, { ComponentType } from 'react'
 import NotificationComponentProps from './types/NotificationComponent'
 import TransitionState from './types/TransitionState'
 import useTimeout from './useTimeout'
 
-interface NotificationControllerProps {
+interface NotificationControllerProps<ContentType> {
   autoDismiss: boolean
   autoDismissTimeout: number
   onDismiss: () => void
-  component: ComponentType<NotificationComponentProps>
-  type?: NotificationType
-  children?: ReactNode
+  component: ComponentType<NotificationComponentProps<ContentType>>
+  content: ContentType
   transitionDuration?: number
   transitionState: TransitionState
 }
 
-const NotificationController = ({
+const NotificationController = function NotificationController<ContentType>({
   autoDismiss,
   autoDismissTimeout,
   onDismiss,
   component: Notification,
-  children,
+  content,
   ...notificationProps
-}: NotificationControllerProps) => {
+}: NotificationControllerProps<ContentType>) {
   useTimeout(autoDismiss ? onDismiss : () => null, autoDismissTimeout)
 
   return (
-    <Notification onDismiss={onDismiss} {...notificationProps}>
-      {children}
-    </Notification>
+    <Notification
+      onDismiss={onDismiss}
+      content={content}
+      {...notificationProps}
+    />
   )
 }
 

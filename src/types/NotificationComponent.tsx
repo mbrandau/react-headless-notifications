@@ -1,11 +1,8 @@
-import { ReactNode } from 'react'
-import NotificationType from './NotificationType'
 import TransitionState from './TransitionState'
 
-interface NotificationComponentProps {
+interface NotificationComponentProps<ContentType> {
   onDismiss?: () => void
-  children?: ReactNode
-  type?: NotificationType
+  content: ContentType
   transitionState: TransitionState
   transitionDuration?: number
 }
